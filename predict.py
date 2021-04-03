@@ -1,13 +1,48 @@
-import io
-import torch 
-import torch.nn as nn 
-import torchvision.transforms as transforms 
-from PIL import Image
-from torchsummary import summary              # for getting the summary of our model
+import os                       # for working with files
+import numpy as np              # for numerical computationss
+import pandas as pd             # for working with dataframes
+import torch                    # Pytorch module 
+import matplotlib.pyplot as plt # for plotting informations on graph and images using tensors
+import torch.nn as nn           # for creating  neural networks
+from torch.utils.data import DataLoader # for dataloaders 
+from PIL import Image           # for checking images
+import torch.nn.functional as F # for functions for calculating loss
+import torchvision.transforms as transforms   # for transforming images into tensors 
+from torchvision.utils import make_grid       # for data checking
+from torchvision.datasets import ImageFolder  # for working with classes and images
 
 
-disease = ['Tomato___Late_blight', 'Tomato___healthy', 'Grape___healthy', 'Orange___Haunglongbing_(Citrus_greening)', 'Soybean___healthy', 'Squash___Powdery_mildew', 'Potato___healthy', 'Corn_(maize)___Northern_Leaf_Blight', 'Tomato___Early_blight', 'Tomato___Septoria_leaf_spot', 'Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot', 'Strawberry___Leaf_scorch', 'Peach___healthy', 'Apple___Apple_scab', 'Tomato___Tomato_Yellow_Leaf_Curl_Virus', 'Tomato___Bacterial_spot', 'Apple___Black_rot', 'Blueberry___healthy', 'Cherry_(including_sour)___Powdery_mildew', 'Peach___Bacterial_spot', 'Apple___Cedar_apple_rust', 'Tomato___Target_Spot', 'Pepper,_bell___healthy', 'Grape___Leaf_blight_(Isariopsis_Leaf_Spot)', 'Potato___Late_blight', 'Tomato___Tomato_mosaic_virus', 'Strawberry___healthy', 'Apple___healthy', 'Grape___Black_rot', 'Potato___Early_blight', 'Cherry_(including_sour)___healthy', 'Corn_(maize)___Common_rust_', 'Grape___Esca_(Black_Measles)', 'Raspberry___healthy', 'Tomato___Leaf_Mold', 'Tomato___Spider_mites Two-spotted_spider_mite', 'Pepper,_bell___Bacterial_spot', 'Corn_(maize)___healthy']
-print(len(disease))
+data_dir = "New Plant Diseases Dataset(Augmented)"
+train_dir = data_dir + "/train"
+train = ImageFolder(train_dir, transform=transforms.Compose([transforms.ToTensor()]))
+
+# base class for the model
+class ImageClassificationBase(nn.Module):
+    
+    def training_step(self, batch):
+        images, labels = batch
+        out = self(images)                  # Generate predictions
+        loss = F.cross_entropy(out, labels) # Calculate loss
+        return loss
+    
+    def validation_step(self, batch):
+        images, labels = batch
+        out = self(images)                   # Generate prediction
+        loss = F.cross_entropy(out, labels)  # Calculate loss
+        acc = accuracy(out, labels)          # Calculate accuracy
+        return {"val_loss": loss.detach(), "val_accuracy": acc}
+    
+    def validation_epoch_end(self, outputs):
+        batch_losses = [x["val_loss"] for x in outputs]
+        batch_accuracy = [x["val_accuracy"] for x in outputs]
+        epoch_loss = torch.stack(batch_losses).mean()       # Combine loss  
+        epoch_accuracy = torch.stack(batch_accuracy).mean()
+        return {"val_loss": epoch_loss, "val_accuracy": epoch_accuracy} # Combine accuracies
+    
+    def epoch_end(self, epoch, result):
+        print("Epoch [{}], last_lr: {:.5f}, train_loss: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}".format(
+            epoch, result['lrs'][-1], result['train_loss'], result['val_loss'], result['val_accuracy']))
+        
 
 # convolution block with BatchNormalization
 def ConvBlock(in_channels, out_channels, pool=False):
@@ -18,9 +53,7 @@ def ConvBlock(in_channels, out_channels, pool=False):
         layers.append(nn.MaxPool2d(4))
     return nn.Sequential(*layers)
 
-
-# resnet architecture 
-class ResNet9(nn.Module):
+class ResNet9(ImageClassificationBase):
     def __init__(self, in_channels, num_diseases):
         super().__init__()
         
@@ -44,42 +77,85 @@ class ResNet9(nn.Module):
         out = self.conv4(out)
         out = self.res2(out) + out
         out = self.classifier(out)
-        return out        
+        return out 
+
+# TODO: Write a function that loads a checkpoint and rebuilds the model
+def loadcheckPoint(filename):
+    checkpoint = torch.load(filename)
+    learning_rate = checkpoint['learning_rate']
+    model.epochs = checkpoint['epochs']
+    model.load_state_dict(checkpoint['state_dict'])        
+    return model
 
 
-model = ResNet9(3, 38)
-INPUT_SHAPE = (3, 256, 256)
-PATH = "plant-disease-model-complete.pth"
+def predict_image(img, model):
+    """Converts image to array and return the predicted class
+        with highest probability"""
+    # Convert to a batch of 1
+    model.eval()
+    xb = to_device(img.unsqueeze(0), device)
+    # Get predictions from model
+    yb = model(xb)
+    # Pick index with highest probability
+    _, preds  = torch.max(yb, dim=1)
+    # Retrieve the class label
 
-device = torch.device("cpu")
-PATH = "plant-disease-model.pth"
-device = torch.device('cpu')
-# model = ResNet9(*args, **kwargs)
-model.load_state_dict(torch.load(PATH, map_location=device))
+    return train.classes[preds[0].item()]
 
+# for moving data to device (CPU or GPU)
+def to_device(data, device):
+    """Move tensor(s) to chosen device"""
+    if isinstance(data, (list,tuple)):
+        return [to_device(x, device) for x in data]
+    return data.to(device, non_blocking=True)
 
-
-# image -> tensor
-def transform_image(image_bytes):
-    transform = transforms.Compose([transforms.ToTensor()])
-
-    image = Image.open(io.BytesIO(image_bytes))
-    return transform(image).unsqueeze(0)
-
-def get_prediction(image_tensor):
-    # images = image_tensor.reshape(-1, 256*256)
-    outputs = model(image_tensor)
-        # max returns (value ,index)
-    _, predicted = torch.max(outputs.data, 1)
-    return disease[predicted]
-
-
-with open('0b37761a-de32-47ee-a3a4-e138b97ef542___JR_FrgE.S 2908_new30degFlipLR.JPG', 'rb') as f:
-    img_bytes = f.read()
-
+# for moving data into GPU (if available)
+def get_default_device():
+    """Pick GPU if available, else CPU"""
+    if torch.cuda.is_available:
+        return torch.device("cuda")
+    else:
+        return torch.device("cpu")
 
 
-tensor = transform_image(img_bytes)
-predicted=get_prediction(tensor)
 
-print(predicted)
+
+
+device = get_default_device()
+
+model = to_device(ResNet9(3, len(train.classes)), device) 
+nn_filename = 'checkpoint.pth'
+
+loaded_model = loadcheckPoint(nn_filename)
+print(loaded_model)
+
+
+
+
+
+
+
+
+
+
+
+
+
+# getting all predictions (actual label vs predicted)
+
+
+
+
+
+
+
+
+
+
+# test_dir = "test"
+# test = ImageFolder(test_dir, transform=transforms.ToTensor())
+# test_images = sorted(os.listdir(test_dir + '/test')) # since images in test folder are in alphabetical order
+
+# for i, (img, label) in enumerate(test):
+#     print('Label:', test_images[i], ', Predicted:', predict_image(img, loaded_model))
+
