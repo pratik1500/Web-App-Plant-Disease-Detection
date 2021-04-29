@@ -11,9 +11,7 @@ import io
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return render_template('index.html')
+
 
 
 def get_prediction(tensor):
@@ -41,8 +39,12 @@ def transform_image(image_location):
     image = Image.open(io.BytesIO(image_bytes))
     return transform(image).unsqueeze(0)
 
+@app.route('/')
+def home():
+    return render_template('index.html')
+
 UPLOAD_FOLDER = "IMAGE_FOLDER/"
-@app.route('/predict',methods=["GET","POST"])
+@app.route('/',methods=["POST"])
 def predict():
     if request.method == "POST":
         image_file = request.files["image"]

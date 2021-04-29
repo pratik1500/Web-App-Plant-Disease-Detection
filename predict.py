@@ -12,9 +12,7 @@ from torchvision.utils import make_grid       # for data checking
 from torchvision.datasets import ImageFolder  # for working with classes and images
 
 
-data_dir = "New Plant Diseases Dataset(Augmented)"
-train_dir = data_dir + "/train"
-train = ImageFolder(train_dir, transform=transforms.Compose([transforms.ToTensor()]))
+
 
 # base class for the model
 class ImageClassificationBase(nn.Module):
@@ -80,7 +78,7 @@ class ResNet9(ImageClassificationBase):
         return out 
 
 # TODO: Write a function that loads a checkpoint and rebuilds the model
-def loadcheckPoint(filename):
+def loadcheckPoint(filename,model):
     checkpoint = torch.load(filename)
     learning_rate = checkpoint['learning_rate']
     model.epochs = checkpoint['epochs']
@@ -92,7 +90,11 @@ def predict_image(img, model):
     """Converts image to array and return the predicted class
         with highest probability"""
     # Convert to a batch of 1
+    data_dir = "New Plant Diseases Dataset(Augmented)"
+    train_dir = data_dir + "/train"
+    train = ImageFolder(train_dir, transform=transforms.Compose([transforms.ToTensor()]))
     model.eval()
+    device = get_default_device()
     xb = to_device(img.unsqueeze(0), device)
     # Get predictions from model
     yb = model(xb)
@@ -118,44 +120,4 @@ def get_default_device():
         return torch.device("cpu")
 
 
-
-
-
-device = get_default_device()
-
-model = to_device(ResNet9(3, len(train.classes)), device) 
-nn_filename = 'checkpoint.pth'
-
-loaded_model = loadcheckPoint(nn_filename)
-print(loaded_model)
-
-
-
-
-
-
-
-
-
-
-
-
-
-# getting all predictions (actual label vs predicted)
-
-
-
-
-
-
-
-
-
-
-# test_dir = "test"
-# test = ImageFolder(test_dir, transform=transforms.ToTensor())
-# test_images = sorted(os.listdir(test_dir + '/test')) # since images in test folder are in alphabetical order
-
-# for i, (img, label) in enumerate(test):
-#     print('Label:', test_images[i], ', Predicted:', predict_image(img, loaded_model))
 
