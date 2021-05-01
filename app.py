@@ -62,7 +62,7 @@ def predict():
             return render_template("index.html",prediction = disease)
     return render_template("index.html", prediciton = 1)
 if __name__ == "__main__":
-    app.run()
+    app.run(port=8000)
 
 
 
